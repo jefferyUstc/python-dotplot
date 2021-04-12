@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 
-def parse_from_clusterprofile(cls, dataframes, groups, term_list=None):
+def merge_clusterprofile_results(dataframes, groups, term_list=None):
     assert len(dataframes) == len(groups)
     merged_df = None
     for _dataframe, _group in zip(dataframes, groups):
