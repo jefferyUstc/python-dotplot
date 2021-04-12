@@ -27,8 +27,9 @@ class DotPlot(object):
         self.resized_size_data: pd.DataFrame
 
     @classmethod
-    def parse_from_tidy_data(cls, data_frame: pd.DataFrame, item_key: str, group_key: str,
-                             sizes_key: str, color_key: str, selected_item: Union[None, Sequence] = None, *,
+    def parse_from_tidy_data(cls, data_frame: pd.DataFrame, item_key: str, group_key: str, sizes_key: str,
+                             color_key: str, selected_item: Union[None, Sequence] = None,
+                             selected_group: Union[None, Sequence] = None, *,
                              sizes_func: Union[None, Callable] = None, color_func: Union[None, Callable] = None
                              ):
         """
@@ -41,6 +42,8 @@ class DotPlot(object):
         :param sizes_key:
         :param color_key:
         :param selected_item: default None, if specified, this should be subsets of `item_key` in `data_frame`
+                              alternatively, this param can be used as self-defined item order definition.
+        :param selected_group: Same as `selected_item`, for group order and subset groups
         :param sizes_func:
         :param color_func:
         :return:
@@ -50,10 +53,12 @@ class DotPlot(object):
             data_frame[sizes_key] = data_frame[sizes_key].map(sizes_func)
         if color_func is not None:
             data_frame[color_key] = data_frame[color_key].map(color_func)
-        if selected_item is not None:
-            data_frame = data_frame(data_frame.term_key.isin(selected_item))
-
         data_frame = data_frame.pivot(index=item_key, columns=group_key, values=[color_key, sizes_key])
+        if selected_item is not None:
+            data_frame = data_frame.loc[selected_item, :]
+        if selected_group is not None:
+            data_frame = data_frame.loc[:, selected_group]
+
         data_frame.columns = data_frame.columns.map(lambda x: '_'.join(x))
         data_frame = data_frame.fillna(0)
         color_df = data_frame.loc[:, data_frame.columns.str.startswith(color_key)]
