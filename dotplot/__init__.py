@@ -19,6 +19,7 @@ class DotPlot(object):
         :param df_size: the DataFrame object represents the scatter size in dotplot
         :param df_color: the DataFrame object represents the color in dotplot
         """
+        __slots__ = ['size_data', 'color_data', 'height', 'width', 'resized_size_data']
         if (df_color is not None) & (df_size.shape != df_color.shape):
             raise ValueError('df_size and df_color should have the same dimension')
         self.size_data = df_size
