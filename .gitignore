@@ -133,3 +133,6 @@ job*
 script*
 data/
 .idea/
+
+#
+test*
