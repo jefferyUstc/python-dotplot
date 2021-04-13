@@ -10,6 +10,11 @@ from matplotlib import pyplot as plt
 
 
 class DotPlot(object):
+    DEFAULT_ITEM_HEIGHT = 0.3
+    DEFAULT_ITEM_WIDTH = 0.35
+    DEFAULT_LEGENDS_WIDTH = .5
+    MIN_FIGURE_HEIGHT = 3
+
     def __init__(self, df_size: pd.DataFrame,
                  df_color: Union[pd.DataFrame, None] = None,
                  ):
@@ -19,13 +24,30 @@ class DotPlot(object):
         :param df_size: the DataFrame object represents the scatter size in dotplot
         :param df_color: the DataFrame object represents the color in dotplot
         """
-        __slots__ = ['size_data', 'color_data', 'height', 'width', 'resized_size_data']
+        __slots__ = ['size_data', 'color_data', 'height_item', 'width_item', 'resized_size_data']
         if (df_color is not None) & (df_size.shape != df_color.shape):
             raise ValueError('df_size and df_color should have the same dimension')
         self.size_data = df_size
         self.color_data = df_color
-        self.height, self.width = df_size.shape
+        self.height_item, self.width_item = df_size.shape
         self.resized_size_data: pd.DataFrame
+
+    def __get_figure(self):
+        _text_max = math.ceil(self.size_data.index.map(len).max() / 15)
+        mainplot_height = self.height_item * self.DEFAULT_ITEM_HEIGHT
+        mainplot_width = (
+                (_text_max + self.width_item) * self.DEFAULT_ITEM_WIDTH
+        )
+        figure_height = max([self.MIN_FIGURE_HEIGHT, mainplot_height])
+        figure_width = mainplot_width + self.DEFAULT_LEGENDS_WIDTH
+        plt.style.use('seaborn-white')
+        fig = plt.figure(figsize=(figure_width, figure_height))
+        gs = gridspec.GridSpec(nrows=2, ncols=2, wspace=0.15, hspace=0.15,
+                               width_ratios=[mainplot_width, self.DEFAULT_LEGENDS_WIDTH])
+        ax = fig.add_subplot(gs[:, 0])
+        ax_cbar = fig.add_subplot(gs[1, 1])
+        ax_legend = fig.add_subplot(gs[0, 1])
+        return ax, ax_cbar, ax_legend, fig
 
     @classmethod
     def parse_from_tidy_data(cls, data_frame: pd.DataFrame, item_key: str, group_key: str, sizes_key: str,
@@ -50,11 +72,14 @@ class DotPlot(object):
         :return:
         """
         data_frame = data_frame[[item_key, group_key, sizes_key, color_key]]
+        _original_item_order = data_frame[item_key].tolist()
+        _original_item_order = _original_item_order[::-1]
         if sizes_func is not None:
             data_frame[sizes_key] = data_frame[sizes_key].map(sizes_func)
         if color_func is not None:
             data_frame[color_key] = data_frame[color_key].map(color_func)
         data_frame = data_frame.pivot(index=item_key, columns=group_key, values=[color_key, sizes_key])
+        data_frame = data_frame.loc[_original_item_order, :]
         if selected_item is not None:
             data_frame = data_frame.loc[selected_item, :]
         if selected_group is not None:
@@ -68,26 +93,9 @@ class DotPlot(object):
         sizes_df.columns = sizes_df.columns.map(lambda x: '_'.join(x.split('_')[1:]))
         return cls(color_df, sizes_df)
 
-    def __determine_figsize(self, **kwargs):
-        width_factor = kwargs.get('width_factor', 4)
-        height_factor = kwargs.get('height_factor', 0.45)
-        fig_width, fig_height = width_factor * self.width, height_factor * self.height
-        fig_width = fig_width / 9 * 10
-        return fig_width, fig_height
-
-    def __get_figure_layout(self, **kwargs):
-        fig_width, fig_height = self.__determine_figsize(**kwargs)
-        plt.style.use('seaborn-white')
-        fig = plt.figure(figsize=(fig_width, fig_height))
-        gs = gridspec.GridSpec(nrows=2, ncols=10, wspace=0.4, hspace=0.1)
-        ax = fig.add_subplot(gs[:, :-4])
-        ax_cbar = fig.add_subplot(gs[1, -4:-3])
-        ax_legend = fig.add_subplot(gs[0, -4:])
-        return ax, ax_cbar, ax_legend, fig
-
     def __get_coordinates(self, size_factor):
-        X = list(range(1, self.width + 1)) * self.height
-        Y = sorted(list(range(1, self.height + 1)) * self.width)
+        X = list(range(1, self.width_item + 1)) * self.height_item
+        Y = sorted(list(range(1, self.height_item + 1)) * self.width_item)
         self.resized_size_data = self.size_data.applymap(func=lambda x: x * size_factor)
         return X, Y
 
@@ -99,7 +107,7 @@ class DotPlot(object):
         else:
             sct = ax.scatter(X, Y, c=self.color_data.values.flatten(), s=self.resized_size_data.values.flatten(),
                              edgecolors='none', linewidths=0, vmin=vmin, vmax=vmax, cmap=cmap)
-        width, height = self.width, self.height
+        width, height = self.width_item, self.height_item
         ax.set_xlim([0.5, width + 0.5])
         ax.set_ylim([0.6, height + 0.6])
         ax.set_xticks(range(1, width + 1))
@@ -147,8 +155,7 @@ class DotPlot(object):
     def plot(self, size_factor: float = 15,
              vmin: float = 0, vmax: float = None,
              path: Union[PathLike, None] = None,
-             cmap: Union[str, mpl.colors.Colormap] = 'Reds',
-             **kwargs):
+             cmap: Union[str, mpl.colors.Colormap] = 'Reds'):
         """
 
         :param size_factor: `size factor` * `value` for the actually representation of scatter size in the final figure
@@ -156,16 +163,14 @@ class DotPlot(object):
         :param vmax: `vmax` in `matplotlib.pyplot.scatter`
         :param path: path to save the figure
         :param cmap: color map supported by matplotlib
-        :param kwargs:
         :return:
         """
-        ax, ax_cbar, ax_legend, fig = self.__get_figure_layout(**kwargs)
+        ax, ax_cbar, ax_legend, fig = self.__get_figure()
         scatter = self.__draw_dotplot(ax, size_factor, cmap, vmin, vmax)
         self.__draw_legend(ax_legend, scatter, size_factor)
         self.__draw_color_bar(ax_cbar, scatter, cmap, vmin, vmax)
-        plt.subplots_adjust(left=0.75)
         if path:
-            fig.savefig(path, dpi=300)
+            fig.savefig(path, dpi=300, bbox_inches='tight')  #
         return scatter
 
     def __str__(self):
