@@ -158,7 +158,6 @@ class DotPlot(object):
 
     @staticmethod
     def __draw_legend(ax, sct: mpl.collections.PathCollection, size_factor, title, circle=False, color=None):
-        print(id(sct))
         handles, labels = sct.legend_elements(prop="sizes", alpha=1,
                                               func=lambda x: x / size_factor,
                                               color=color
