@@ -17,10 +17,12 @@ class DotPlot(object):
     DEFAULT_ITEM_WIDTH = 0.3
     DEFAULT_LEGENDS_WIDTH = .45
     MIN_FIGURE_HEIGHT = 3
+    DEFAULT_BAND_ITEM_LENGTH = DEFAULT_ITEM_HEIGHT
 
     def __init__(self, df_size: pd.DataFrame,
                  df_color: Union[pd.DataFrame, None] = None,
                  df_circle: Union[pd.DataFrame, None] = None,
+                 df_annotation: Union[pd.DataFrame, None] = None,
                  ):
         """
         Construction a `DotPlot` object from `df_size` and `df_color`
@@ -30,16 +32,22 @@ class DotPlot(object):
         """
         __slots__ = ['size_data', 'resized_size_data',
                      'color_data', 'height_item', 'width_item',
-                     'circle_data', 'resized_circle_data'
+                     'circle_data', 'resized_circle_data', 'annotation_data'
                      ]
-        if (df_color is not None) & (df_size.shape != df_color.shape):
+        if df_color is not None and df_size.shape != df_color.shape:
             raise ValueError('df_size and df_color should have the same dimension')
+        if df_circle is not None and df_size.shape != df_circle.shape:
+            raise ValueError('df_size and df_circle should have the same dimension')
+        if df_annotation is not None and df_size.shape != df_annotation.shape:
+            raise ValueError('df_size and df_annotation should have the same row number')
+
         self.size_data = df_size
         self.color_data = df_color
         self.circle_data = df_circle
         self.height_item, self.width_item = df_size.shape
-        self.resized_size_data: pd.DataFrame
-        self.resized_circle_data: pd.DataFrame
+        self.annotation_data = df_annotation
+        self.resized_size_data: Union[pd.DataFrame, None] = None
+        self.resized_circle_data: Union[pd.DataFrame, None] = None
 
     def __get_figure(self):
         _text_max = math.ceil(self.size_data.index.map(len).max() / 15)
@@ -47,6 +55,9 @@ class DotPlot(object):
         mainplot_width = (
                 (_text_max + self.width_item) * self.DEFAULT_ITEM_WIDTH
         )
+        if self.annotation_data is not None:
+            pass
+
         figure_height = max([self.MIN_FIGURE_HEIGHT, mainplot_height])
         figure_width = mainplot_width + self.DEFAULT_LEGENDS_WIDTH
         plt.style.use('seaborn-white')
@@ -102,7 +113,7 @@ class DotPlot(object):
         data_frame.columns = data_frame.columns.map(lambda x: '_'.join(x))
         data_frame = data_frame.fillna(0)
 
-        sizes_df, color_df, circle_df = (None, None, None)
+        sizes_df, color_df, circle_df = None, None, None
         sizes_df = data_frame.loc[:, data_frame.columns.str.startswith(sizes_key)]
         if color_key is not None:
             color_df = data_frame.loc[:, data_frame.columns.str.startswith(color_key)]
@@ -114,7 +125,8 @@ class DotPlot(object):
         X = list(range(1, self.width_item + 1)) * self.height_item
         Y = sorted(list(range(1, self.height_item + 1)) * self.width_item)
         self.resized_size_data = self.size_data.applymap(func=lambda x: x * size_factor)
-        self.resized_circle_data = self.circle_data.applymap(func=lambda x: x * size_factor)
+        if self.circle_data is not None:
+            self.resized_circle_data = self.circle_data.applymap(func=lambda x: x * size_factor)
         return X, Y
 
     def __draw_dotplot(self, ax, size_factor, cmap, vmin, vmax):
@@ -200,6 +212,8 @@ class DotPlot(object):
         self.__draw_legend(ax_sizes, scatter, size_factor, title='Sizes', color='#58000C')
         if sct_circle is not None:
             self.__draw_legend(ax_circles, sct_circle, size_factor, title='Circles', circle=True, color='k')
+        else:
+            ax_circles.axis('off')
         self.__draw_color_bar(ax_cbar, scatter, cmap, vmin, vmax)
         if path:
             fig.savefig(path, dpi=300, bbox_inches='tight')  #
