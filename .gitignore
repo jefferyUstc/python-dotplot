@@ -131,8 +131,5 @@ dmypy.json
 # custom
 job*
 script*
-data/
 .idea/
-
-#
-test*
+test.py
