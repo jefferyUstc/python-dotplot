@@ -19,6 +19,7 @@ class DotPlot(object):
     MIN_FIGURE_HEIGHT = 3
     DEFAULT_BAND_ITEM_LENGTH = DEFAULT_ITEM_HEIGHT
 
+    # TODO implement annotation band
     def __init__(self, df_size: pd.DataFrame,
                  df_color: Union[pd.DataFrame, None] = None,
                  df_circle: Union[pd.DataFrame, None] = None,
@@ -55,11 +56,11 @@ class DotPlot(object):
         mainplot_width = (
                 (_text_max + self.width_item) * self.DEFAULT_ITEM_WIDTH
         )
-        if self.annotation_data is not None:
-            pass
-
         figure_height = max([self.MIN_FIGURE_HEIGHT, mainplot_height])
         figure_width = mainplot_width + self.DEFAULT_LEGENDS_WIDTH
+        if self.annotation_data is not None:
+            # figure_width = figure_width + self.DEFAULT_BAND_ITEM_LENGTH * self.annotation_data.shape[1]
+            ...
         plt.style.use('seaborn-white')
         fig = plt.figure(figsize=(figure_width, figure_height))
         gs = gridspec.GridSpec(nrows=3, ncols=2, wspace=0.15, hspace=0.15,
@@ -68,6 +69,9 @@ class DotPlot(object):
         ax_cbar = fig.add_subplot(gs[2, 1])
         ax_sizes = fig.add_subplot(gs[0, 1])
         ax_circles = fig.add_subplot(gs[1, 1])
+        if self.color_data is None:
+            ax_cbar.axis('off')
+        ax_circles.axis('off')
         return ax, ax_cbar, ax_sizes, ax_circles, fig
 
     @classmethod
@@ -129,18 +133,24 @@ class DotPlot(object):
             self.resized_circle_data = self.circle_data.applymap(func=lambda x: x * size_factor)
         return X, Y
 
-    def __draw_dotplot(self, ax, size_factor, cmap, vmin, vmax):
+    def __draw_dotplot(self, ax, size_factor, cmap, vmin, vmax, **kws):
+        dot_color = kws.get('dot_color', '#58000C')
+        circle_color = kws.get('circle_color', '#000000')
+        kws = kws.copy()
+        for _value in ['dot_title', 'circle_title', 'colorbar_title', 'dot_color', 'circle_color']:
+            _ = kws.pop(_value, None)
+
         X, Y = self.__get_coordinates(size_factor)
         if self.color_data is None:
-            sct = ax.scatter(X, Y, c='r', cmap=cmap, s=self.resized_size_data.values.flatten(),
-                             edgecolors='none', linewidths=0, vmin=vmin, vmax=vmax)
+            sct = ax.scatter(X, Y, c=dot_color, s=self.resized_size_data.values.flatten(),
+                             edgecolors='none', linewidths=0, vmin=vmin, vmax=vmax, cmap=cmap, **kws)
         else:
             sct = ax.scatter(X, Y, c=self.color_data.values.flatten(), s=self.resized_size_data.values.flatten(),
-                             edgecolors='none', linewidths=0, vmin=vmin, vmax=vmax, cmap=cmap)
+                             edgecolors='none', linewidths=0, vmin=vmin, vmax=vmax, cmap=cmap, **kws)
         sct_circle = None
         if self.circle_data is not None:
-            sct_circle = ax.scatter(X, Y, c='', edgecolors='k', marker='o', linestyle='--',
-                                    s=self.resized_circle_data.values.flatten())
+            sct_circle = ax.scatter(X, Y, c='none', s=self.resized_circle_data.values.flatten(),
+                                    edgecolors=circle_color, marker='o', vmin=vmin, vmax=vmax, linestyle='--')
         width, height = self.width_item, self.height_item
         ax.set_xlim([0.5, width + 0.5])
         ax.set_ylim([0.6, height + 0.6])
@@ -153,7 +163,7 @@ class DotPlot(object):
         return sct, sct_circle
 
     @staticmethod
-    def __draw_color_bar(ax, sct: mpl.collections.PathCollection, cmap, vmin, vmax):
+    def __draw_color_bar(ax, sct: mpl.collections.PathCollection, cmap, vmin, vmax, ylabel):
         gradient = np.linspace(1, 0, 500)
         gradient = gradient[:, np.newaxis]
         _ = ax.imshow(gradient, aspect='auto', cmap=cmap, origin='upper', extent=[.2, 0.3, 0.5, -0.5])
@@ -166,7 +176,7 @@ class DotPlot(object):
         if vmin is None:
             vmin = math.floor(sct.get_array().min())
         _ = ax_cbar2.set_yticklabels([vmin, vmax])
-        _ = ax_cbar2.set_ylabel('-log10(pvalue)')
+        _ = ax_cbar2.set_ylabel(ylabel)
 
     @staticmethod
     def __draw_legend(ax, sct: mpl.collections.PathCollection, size_factor, title, circle=False, color=None):
@@ -197,7 +207,9 @@ class DotPlot(object):
     def plot(self, size_factor: float = 15,
              vmin: float = 0, vmax: float = None,
              path: Union[PathLike, None] = None,
-             cmap: Union[str, mpl.colors.Colormap] = 'Reds'):
+             cmap: Union[str, mpl.colors.Colormap] = 'Reds',
+             **kwargs
+             ):
         """
 
         :param size_factor: `size factor` * `value` for the actually representation of scatter size in the final figure
@@ -205,16 +217,23 @@ class DotPlot(object):
         :param vmax: `vmax` in `matplotlib.pyplot.scatter`
         :param path: path to save the figure
         :param cmap: color map supported by matplotlib
+        :param kwargs: dot_title, circle_title, colorbar_title, dot_color, circle_color
+                    other kwargs are passed to `matplotlib.Axes.scatter`
         :return:
         """
         ax, ax_cbar, ax_sizes, ax_circles, fig = self.__get_figure()
         scatter, sct_circle = self.__draw_dotplot(ax, size_factor, cmap, vmin, vmax)
-        self.__draw_legend(ax_sizes, scatter, size_factor, title='Sizes', color='#58000C')
+        self.__draw_legend(ax_sizes, scatter, size_factor,
+                           color=kwargs.get('dot_color', '#58000C'),  # dot legend color
+                           title=kwargs.get('dot_title', 'Sizes'))
         if sct_circle is not None:
-            self.__draw_legend(ax_circles, sct_circle, size_factor, title='Circles', circle=True, color='k')
-        else:
-            ax_circles.axis('off')
-        self.__draw_color_bar(ax_cbar, scatter, cmap, vmin, vmax)
+            self.__draw_legend(ax_circles, sct_circle, size_factor,
+                               color=kwargs.get('circle_color', '#000000'),
+                               title=kwargs.get('circle_title', 'Circles'),
+                               circle=True)
+        if self.color_data is not None:
+            self.__draw_color_bar(ax_cbar, scatter, cmap, vmin, vmax,
+                                  ylabel=kwargs.get('colorbar_title', '-log10(pvalue)'))
         if path:
             fig.savefig(path, dpi=300, bbox_inches='tight')  #
         return scatter

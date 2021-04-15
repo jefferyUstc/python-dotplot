@@ -16,7 +16,8 @@ def merge_clusterprofile_results(dataframes, groups, group_key='group', term_lis
         else:
             _sub_df = _dataframe[_dataframe.index.isin(term_list)]
         if not _sub_df.empty:
-            _sub_df[group_key] = _group
+            # _sub_df[group_key] = _group # SettingWithCopyWarning
+            _sub_df.insert(_sub_df.shape[1], group_key, _group)
             if merged_df is not None:
                 merged_df = pd.concat((merged_df, _sub_df))
             else:
