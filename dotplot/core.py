@@ -1,6 +1,6 @@
 import math
 from os import PathLike
-from typing import Union, Sequence, Callable
+from typing import Union, Sequence, Callable, Dict
 
 import matplotlib as mpl
 import numpy as np
@@ -128,9 +128,6 @@ class DotPlot(object):
     def __get_coordinates(self, size_factor):
         X = list(range(1, self.width_item + 1)) * self.height_item
         Y = sorted(list(range(1, self.height_item + 1)) * self.width_item)
-        self.resized_size_data = self.size_data.applymap(func=lambda x: x * size_factor)
-        if self.circle_data is not None:
-            self.resized_circle_data = self.circle_data.applymap(func=lambda x: x * size_factor)
         return X, Y
 
     def __draw_dotplot(self, ax, size_factor, cmap, vmin, vmax, **kws):
@@ -204,11 +201,39 @@ class DotPlot(object):
         ax.spines['left'].set_visible(False)
         ax.spines['right'].set_visible(False)
 
+    def __preprocess_data(self, size_factor, cluster_row=False, cluster_col=False, **kwargs):
+
+        method = kwargs.get('cluster_method', 'ward')
+        metric = kwargs.get('cluster_metric', 'eulidean')
+        n_clusters = kwargs.get('cluster_n', None)
+
+        if cluster_row or cluster_col:
+            from .hierarchical import cluster_hierarchy
+            if cluster_row:
+                _index = cluster_hierarchy(self.size_data, axis=0, method=method,
+                                           metric=metric, n_clusters=n_clusters)
+            else:
+                _index = cluster_hierarchy(self.size_data, axis=1, method=method,
+                                           metric=metric, n_clusters=n_clusters)
+            for item in self.__slots__:
+                if hasattr(self, item):
+                    obj_attr = getattr(self, item)
+                    if isinstance(obj_attr, pd.DataFrame):
+                        if cluster_row:
+                            obj_attr = obj_attr.loc[_index, :]
+                        if cluster_col:
+                            obj_attr = obj_attr.loc[:, _index]
+                        setattr(self, item, obj_attr)
+        self.resized_size_data = self.size_data.applymap(func=lambda x: x * size_factor)
+        if self.circle_data is not None:
+            self.resized_circle_data = self.circle_data.applymap(func=lambda x: x * size_factor)
+
     def plot(self, size_factor: float = 15,
              vmin: float = 0, vmax: float = None,
              path: Union[PathLike, None] = None,
              cmap: Union[str, mpl.colors.Colormap] = 'Reds',
-             **kwargs
+             cluster_row: bool = False, cluster_col: bool = False,
+             cluster_kws: Union[Dict, None] = None, **kwargs
              ):
         """
 
@@ -219,8 +244,14 @@ class DotPlot(object):
         :param cmap: color map supported by matplotlib
         :param kwargs: dot_title, circle_title, colorbar_title, dot_color, circle_color
                     other kwargs are passed to `matplotlib.Axes.scatter`
+        :param cluster_row, whether to cluster the row
+        :param cluster_col, whether to cluster the row
+        :param cluster_kws, key args for cluster, including `cluster_method`, `cluster_metric`， 'cluster_n'
         :return:
         """
+        self.__preprocess_data(size_factor, cluster_row=cluster_row, cluster_col=cluster_col,
+                               **cluster_kws if cluster_kws is not None else {}
+                               )
         ax, ax_cbar, ax_sizes, ax_circles, fig = self.__get_figure()
         scatter, sct_circle = self.__draw_dotplot(ax, size_factor, cmap, vmin, vmax)
         self.__draw_legend(ax_sizes, scatter, size_factor,
