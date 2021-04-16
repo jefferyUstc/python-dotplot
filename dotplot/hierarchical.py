@@ -52,7 +52,7 @@ def cluster_hierarchy(data, method, axis, metric='euclidean', n_clusters=None):
     _linkage = make_linkage(array, method, metric)
 
     if n_clusters is not None:
-        cut_result = cut_tree(linkage, n_clusters=n_clusters)
+        cut_result = cut_tree(_linkage, n_clusters=n_clusters)
         df_cut = pd.DataFrame(cut_result.flatten())
         label = df_cut.iloc[:, 0].sort_values(ascending=True, inplace=False).index.values
         return data.index.values[label]
