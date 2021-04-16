@@ -42,9 +42,9 @@ def cluster_hierarchy(data, method, axis, metric='euclidean', n_clusters=None, n
     n_cluster: int, optional
         return the cut tree.
     no_plot: bool, optional
-    When True, the final rendering is not performed. This is
-    useful if only the data structures computed for the rendering
-    are needed or if matplotlib is not available.
+        When True, the final rendering is not performed. This is
+        useful if only the data structures computed for the rendering
+        are needed or if matplotlib is not available.
     """
     if isinstance(data, pd.DataFrame):
         array = data.values
