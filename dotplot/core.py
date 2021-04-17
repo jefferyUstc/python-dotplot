@@ -102,6 +102,7 @@ class DotPlot(object):
         data_frame = data_frame[keys]
         _original_item_order = data_frame[item_key].tolist()
         _original_item_order = _original_item_order[::-1]
+        _original_item_order = sorted(set(_original_item_order), key=_original_item_order.index)
         if sizes_func is not None:
             data_frame[sizes_key] = data_frame[sizes_key].map(sizes_func)
         if color_func is not None:
@@ -204,7 +205,7 @@ class DotPlot(object):
     def __preprocess_data(self, size_factor, cluster_row=False, cluster_col=False, **kwargs):
 
         method = kwargs.get('cluster_method', 'ward')
-        metric = kwargs.get('cluster_metric', 'eulidean')
+        metric = kwargs.get('cluster_metric', 'euclidean')
         n_clusters = kwargs.get('cluster_n', None)
 
         if cluster_row or cluster_col:
@@ -215,15 +216,15 @@ class DotPlot(object):
             else:
                 _index = cluster_hierarchy(self.size_data, axis=1, method=method,
                                            metric=metric, n_clusters=n_clusters)
-            for item in self.__slots__:
-                if hasattr(self, item):
-                    obj_attr = getattr(self, item)
-                    if isinstance(obj_attr, pd.DataFrame):
+            obj_data = self.__dict__.copy()
+            for _obj_attr, _obj in obj_data.items():
+                if not _obj_attr.startswith('__'):
+                    if isinstance(_obj, pd.DataFrame):
                         if cluster_row:
-                            obj_attr = obj_attr.loc[_index, :]
+                            _obj = _obj.loc[_index, :]
                         if cluster_col:
-                            obj_attr = obj_attr.loc[:, _index]
-                        setattr(self, item, obj_attr)
+                            _obj = _obj.loc[:, _index]
+                        setattr(self, _obj_attr, _obj)
         self.resized_size_data = self.size_data.applymap(func=lambda x: x * size_factor)
         if self.circle_data is not None:
             self.resized_circle_data = self.circle_data.applymap(func=lambda x: x * size_factor)
