@@ -243,11 +243,11 @@ class DotPlot(object):
         :param vmax: `vmax` in `matplotlib.pyplot.scatter`
         :param path: path to save the figure
         :param cmap: color map supported by matplotlib
+        :param cluster_row, whether to cluster the row
+        :param cluster_col, whether to cluster the col
+        :param cluster_kws, key args for cluster, including `cluster_method`, `cluster_metric`， 'cluster_n'
         :param kwargs: dot_title, circle_title, colorbar_title, dot_color, circle_color
                     other kwargs are passed to `matplotlib.Axes.scatter`
-        :param cluster_row, whether to cluster the row
-        :param cluster_col, whether to cluster the row
-        :param cluster_kws, key args for cluster, including `cluster_method`, `cluster_metric`， 'cluster_n'
         :return:
         """
         self.__preprocess_data(size_factor, cluster_row=cluster_row, cluster_col=cluster_col,
