@@ -1,6 +1,6 @@
 """
 module for draw annotation bands.
-PS. This implementation mainly refers to the way of seaborn
+PS. This implementation mainly refers to the way of seaborn.clustermap
 """
 
 import itertools
@@ -17,6 +17,9 @@ mpl.rcParams["font.sans-serif"] = "Arial"
 
 def _process_colors(colors: Union[pd.DataFrame, pd.Series],
                     index_order: Union[Sequence[Union[str, int]], None] = None):
+    """
+    borrowed from seaborn
+    """
     if not isinstance(colors, (pd.DataFrame, pd.Series)):
         raise TypeError('`colors` should be pandas.DataFrame or pandas.Series')
     if index_order is not None:
@@ -37,6 +40,9 @@ def _process_colors(colors: Union[pd.DataFrame, pd.Series],
 
 
 def _color_list_to_matrix_and_cmap(colors, axis=0):
+    """
+    borrowed from seaborn
+    """
     if any(issubclass(type(item), list) for item in colors):
         all_colors = set(itertools.chain(*colors))
         n = len(colors)  # number of fields
@@ -62,6 +68,9 @@ def _color_list_to_matrix_and_cmap(colors, axis=0):
 
 
 def _determine_ticks(labels: Sequence[str]):
+    """
+    center the tick positions
+    """
     num = len(labels)
     return [item + .5 for item in range(num)]
 
@@ -69,7 +78,15 @@ def _determine_ticks(labels: Sequence[str]):
 def draw_heatmap(colors: Union[pd.DataFrame, pd.Series],
                  axes: mpl.axes.Axes, axis=0,
                  index_order: Union[Sequence[Union[str, int]], None] = None, **kwargs):
-    # index_order reverse
+    """
+
+    :param colors: pd.Series or pd.DataFrame
+    :param axes: matplotlib axes object
+    :param axis: 0 or 1
+    :param index_order: the order of colors
+    :param kwargs: passed to `axes.pcolormesh`
+    :return:
+    """
     colors = colors.copy()
     if index_order is not None:
         index_order = list(index_order)[::-1]
@@ -84,5 +101,7 @@ def draw_heatmap(colors: Union[pd.DataFrame, pd.Series],
         axes.set_xticks(_determine_ticks(labels))
         axes.set_xticklabels(labels, rotation=90)
         _ = axes.set_yticks([])
+    else:
+        raise ValueError('axis must be 0 or 1.')
     for item in ['left', 'right', 'bottom', 'top']:
         axes.spines[item].set_visible(False)
