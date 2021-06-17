@@ -52,6 +52,9 @@ class DotPlot(object):
         self.col_colors = col_colors
         self.resized_size_data: Union[pd.DataFrame, None] = None
         self.resized_circle_data: Union[pd.DataFrame, None] = None
+        if (self.row_colors is None) and (self.col_colors is None):
+            self.col_colors = pd.DataFrame({'': ['#FFFFFF'] * df_size.shape[1]},
+                                           index=df_size.columns.tolist())
 
     def __get_figure(self):
         """
