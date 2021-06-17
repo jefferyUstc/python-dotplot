@@ -48,7 +48,6 @@ class DotPlot(object):
         self.color_data = df_color
         self.circle_data = df_circle
         self.height_item, self.width_item = df_size.shape
-        # TODO code logic need to argument
         self.row_colors = row_colors
         self.col_colors = col_colors
         self.resized_size_data: Union[pd.DataFrame, None] = None
@@ -227,29 +226,33 @@ class DotPlot(object):
         ax.spines['left'].set_visible(False)
         ax.spines['right'].set_visible(False)
 
-    def __preprocess_data(self, size_factor, cluster_row=False, cluster_col=False, **kwargs):
-
+    def __cluster_matrix(self, axis=0, **kwargs):
+        from .hierarchical import cluster_hierarchy
         method = kwargs.get('cluster_method', 'ward')
         metric = kwargs.get('cluster_metric', 'euclidean')
         n_clusters = kwargs.get('cluster_n', None)
+        _index = cluster_hierarchy(self.size_data, axis=axis, method=method,
+                                   metric=metric, n_clusters=n_clusters)
+        obj_data = self.__dict__.copy()
+        for _obj_attr, _obj in obj_data.items():
+            if (not _obj_attr.startswith('__')) and isinstance(_obj, (pd.DataFrame, pd.Series)):
+                if _obj_attr in ('row_colors', 'col_colors'):  # TODO may change the action in the future
+                    continue
+                if axis == 0:
+                    _obj = _obj.loc[_index, :]
+                elif axis == 1:
+                    _obj = _obj.loc[:, _index]
+                else:
+                    raise ValueError('axis should be 0 or 1.')
+                setattr(self, _obj_attr, _obj)
+
+    def __preprocess_data(self, size_factor, cluster_row=False, cluster_col=False, **kwargs):
 
         if cluster_row or cluster_col:
-            from .hierarchical import cluster_hierarchy
             if cluster_row:
-                _index = cluster_hierarchy(self.size_data, axis=0, method=method,
-                                           metric=metric, n_clusters=n_clusters)
-            else:
-                _index = cluster_hierarchy(self.size_data, axis=1, method=method,
-                                           metric=metric, n_clusters=n_clusters)
-            obj_data = self.__dict__.copy()
-            for _obj_attr, _obj in obj_data.items():
-                if not _obj_attr.startswith('__'):
-                    if isinstance(_obj, pd.DataFrame):
-                        if cluster_row:
-                            _obj = _obj.loc[_index, :]
-                        if cluster_col:
-                            _obj = _obj.loc[:, _index]
-                        setattr(self, _obj_attr, _obj)
+                self.__cluster_matrix(axis=0, **kwargs)
+            if cluster_col:
+                self.__cluster_matrix(axis=1, **kwargs)
         self.resized_size_data = self.size_data.applymap(func=lambda x: x * size_factor)
         if self.circle_data is not None:
             self.resized_circle_data = self.circle_data.applymap(func=lambda x: x * size_factor)
