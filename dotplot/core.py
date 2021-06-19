@@ -1,6 +1,6 @@
 import math
 from os import PathLike
-from typing import Union, Sequence, Callable, Dict
+from typing import Union, Sequence, Callable, Dict, List
 
 import matplotlib as mpl
 import numpy as np
@@ -10,6 +10,9 @@ from matplotlib import pyplot as plt
 
 mpl.rcParams['pdf.fonttype'] = 42
 mpl.rcParams["font.sans-serif"] = "Arial"
+
+CMAPS_PRESET = ('Reds', 'Blues', 'Purples', 'Oranges', 'Greens', 'Greys')
+COLORS_PRESET = ('r', 'b', '#BA55D3', '#FFA500', 'g', '#C0C0C0')
 
 
 class DotPlot(object):
@@ -24,6 +27,7 @@ class DotPlot(object):
                  df_circle: Union[pd.DataFrame, None] = None,
                  row_colors: Union[pd.DataFrame, None] = None,
                  col_colors: Union[pd.DataFrame, None] = None,
+                 mask_frames: Union[pd.DataFrame, None] = None
                  ):
         """
         Construction a `DotPlot` object from `df_size` and `df_color`
@@ -33,7 +37,7 @@ class DotPlot(object):
         """
         __slots__ = ['size_data', 'resized_size_data',
                      'color_data', 'height_item', 'width_item',
-                     'circle_data', 'resized_circle_data', 'row_colors', 'col_colors'
+                     'circle_data', 'resized_circle_data', 'row_colors', 'col_colors', 'mask_frames'
                      ]
         if df_color is not None and df_size.shape != df_color.shape:
             raise ValueError('df_size and df_color should have the same dimension')
@@ -43,6 +47,8 @@ class DotPlot(object):
             raise ValueError('row_colors has the wrong shape')
         if col_colors is not None and df_size.shape[1] != len(col_colors):
             raise ValueError('col_colors has the wrong shape')
+        if mask_frames is not None and df_size.shape != mask_frames.shape:
+            raise ValueError('df_size and mask_frames should have the same dimension')
 
         self.size_data = df_size
         self.color_data = df_color
@@ -52,6 +58,7 @@ class DotPlot(object):
         self.col_colors = col_colors
         self.resized_size_data: Union[pd.DataFrame, None] = None
         self.resized_circle_data: Union[pd.DataFrame, None] = None
+        self.mask_frames = mask_frames
         if (self.row_colors is None) and (self.col_colors is None):
             self.col_colors = pd.DataFrame({'': ['#FFFFFF'] * df_size.shape[1]},
                                            index=df_size.columns.tolist())
@@ -101,6 +108,7 @@ class DotPlot(object):
         ax_abandon.axis('off')
         return ax, ax_cbar, ax_sizes, ax_circles, ax_row_bands, ax_col_bands, fig
 
+    # TODO update with the newest version of __init__
     @classmethod
     def parse_from_tidy_data(cls, data_frame: pd.DataFrame, item_key: str, group_key: str, sizes_key: str,
                              color_key: Union[None, str] = None, circle_key: Union[None, str] = None,
@@ -158,19 +166,41 @@ class DotPlot(object):
         Y = sorted(list(range(1, self.height_item + 1)) * self.width_item)
         return X, Y
 
-    def __draw_dotplot(self, ax, size_factor, cmap, vmin, vmax, **kws):
+    def __draw_dotplot(self, ax, cmap, vmin, vmax, **kws):
         dot_color = kws.get('dot_color', '#58000C')
         circle_color = kws.get('circle_color', '#000000')
         kws = kws.copy()
         for _value in ['dot_title', 'circle_title', 'colorbar_title', 'dot_color', 'circle_color']:
             _ = kws.pop(_value, None)
-
         X, Y = self.__get_coordinates()
-        if self.color_data is None:
-            sct = ax.scatter(X, Y, c=dot_color, s=self.resized_size_data.values.flatten(),
-                             edgecolors='none', linewidths=0, vmin=vmin, vmax=vmax, cmap=cmap, **kws)
+        resized_size_data_array = self.resized_size_data.values.flatten()
+        color_data_array_or_str = dot_color if self.color_data is None else self.color_data.values.flatten()
+        sct: Union[List[mpl.collections.PathCollection], mpl.collections.PathCollection] = []
+        if self.mask_frames is not None:
+            masks, n_masks = self.resolve_mask(self.mask_frames)
+            if isinstance(color_data_array_or_str, np.ndarray):
+                if isinstance(cmap, (str, mpl.colors.Colormap)):
+                    cmap = CMAPS_PRESET
+                if len(cmap) < n_masks:
+                    raise ValueError('too many groups to draw with limited color map')
+                for _, (mask, _cmap) in enumerate(zip(masks, cmap)):
+                    masked_resized_size_data_array = np.ma.masked_array(resized_size_data_array, mask=mask)
+                    _sct = ax.scatter(X, Y, c=color_data_array_or_str, s=masked_resized_size_data_array,
+                                      edgecolors='none', linewidths=0, vmin=vmin, vmax=vmax, cmap=_cmap, **kws)
+                    sct.append(_sct)
+            else:
+                if isinstance(dot_color, str):
+                    dot_color = COLORS_PRESET
+                if len(dot_color) < n_masks:
+                    raise ValueError('too many groups to draw with limited color')
+                for _, (mask, _dot_color) in enumerate(zip(masks, dot_color)):
+                    masked_resized_size_data_array = np.ma.masked_array(resized_size_data_array, mask=mask)
+                    _sct = ax.scatter(X, Y, c=_dot_color, s=masked_resized_size_data_array,
+                                      edgecolors='none', linewidths=0, vmin=vmin, vmax=vmax, **kws)
+                    sct.append(_sct)
+
         else:
-            sct = ax.scatter(X, Y, c=self.color_data.values.flatten(), s=self.resized_size_data.values.flatten(),
+            sct = ax.scatter(X, Y, c=color_data_array_or_str, s=resized_size_data_array,
                              edgecolors='none', linewidths=0, vmin=vmin, vmax=vmax, cmap=cmap, **kws)
         sct_circle = None
         if self.circle_data is not None:
@@ -250,7 +280,6 @@ class DotPlot(object):
                 setattr(self, _obj_attr, _obj)
 
     def __preprocess_data(self, size_factor, cluster_row=False, cluster_col=False, **kwargs):
-
         if cluster_row or cluster_col:
             if cluster_row:
                 self.__cluster_matrix(axis=0, **kwargs)
@@ -263,7 +292,8 @@ class DotPlot(object):
     def plot(self, size_factor: float = 15,
              vmin: float = 0, vmax: float = None,
              path: Union[PathLike, None] = None,
-             cmap: Union[str, mpl.colors.Colormap] = 'Reds',
+             cmap: Union[str, mpl.colors.Colormap,
+                         Sequence[Union[str, mpl.colors.Colormap]]] = 'Reds',
              cluster_row: bool = False, cluster_col: bool = False,
              cluster_kws: Union[Dict, None] = None,
              color_band_kws: Union[Dict, None] = None,
@@ -275,12 +305,13 @@ class DotPlot(object):
         :param vmin: `vmin` in `matplotlib.pyplot.scatter`
         :param vmax: `vmax` in `matplotlib.pyplot.scatter`
         :param path: path to save the figure
-        :param cmap: color map supported by matplotlib
+        :param cmap: color map supported by matplotlib, can be sequence of cmap when drawing grouped dotplots
         :param cluster_row, whether to cluster the row
         :param cluster_col, whether to cluster the col
         :param cluster_kws, key args for cluster, including `cluster_method`, `cluster_metric`， 'cluster_n'
         :param kwargs: dot_title, circle_title, colorbar_title, dot_color, circle_color
-                    other kwargs are passed to `matplotlib.Axes.scatter`
+                    other kwargs are passed to `matplotlib.Axes.scatter`. Notably, dot_color can be a
+                    color sequence when drawing grouped dotplots
         :param color_band_kws: this kwargs was passed to `matplotlib.axes.Axes.pcolormesh`
         :return:
         """
@@ -288,18 +319,23 @@ class DotPlot(object):
                                **cluster_kws if cluster_kws is not None else {}
                                )
         ax, ax_cbar, ax_sizes, ax_circles, ax_row_bands, ax_col_bands, fig = self.__get_figure()
-        scatter, sct_circle = self.__draw_dotplot(ax, size_factor, cmap, vmin, vmax)
-        self.__draw_legend(ax_sizes, scatter, size_factor,
-                           color=kwargs.get('dot_color', '#58000C'),  # dot legend color
-                           title=kwargs.get('dot_title', 'Sizes'))
+        scatter, sct_circle = self.__draw_dotplot(ax, cmap, vmin, vmax, **kwargs)
+        # todo
+        if isinstance(scatter, Sequence):
+            pass
+        else:
+            self.__draw_legend(ax_sizes, scatter, size_factor,
+                               color=kwargs.get('dot_color', '#58000C'),  # dot legend color
+                               title=kwargs.get('dot_title', 'Sizes'))
+        # todo
+        if self.color_data is not None:
+            self.__draw_color_bar(ax_cbar, scatter, cmap, vmin, vmax,
+                                  ylabel=kwargs.get('colorbar_title', '-log10(pvalue)'))
         if sct_circle is not None:
             self.__draw_legend(ax_circles, sct_circle, size_factor,
                                color=kwargs.get('circle_color', '#000000'),
                                title=kwargs.get('circle_title', 'Circles'),
                                circle=True)
-        if self.color_data is not None:
-            self.__draw_color_bar(ax_cbar, scatter, cmap, vmin, vmax,
-                                  ylabel=kwargs.get('colorbar_title', '-log10(pvalue)'))
 
         if self.col_colors is not None:
             from .annotation_bands import draw_heatmap
@@ -311,10 +347,28 @@ class DotPlot(object):
             from .annotation_bands import draw_heatmap
             draw_heatmap(self.row_colors, axes=ax_row_bands,
                          index_order=self.size_data.index.tolist(), axis=0, **color_band_kws)
-
         if path:
             fig.savefig(path, dpi=300, bbox_inches='tight')
-        return scatter
+        return fig
+
+    @staticmethod
+    def resolve_mask(mask_dataframe: pd.DataFrame):
+        mask_dataframe = mask_dataframe.applymap(func=lambda x: str(x))
+        groups = np.unique(mask_dataframe.to_numpy())
+        mappings = dict(zip(groups, [0] * len(groups)))
+        group_masks = []
+        n_group = 0
+        for group in groups:
+            if group == 'nan':
+                continue
+            n_group += 1
+            _mappings = mappings.copy()
+            _mappings.update({group: 1})
+            group_mask = mask_dataframe.applymap(func=lambda x: _mappings[x])
+            group_masks.append(group_mask)
+        if n_group < 2:
+            raise ValueError('group number<2')
+        return group_masks, n_group
 
     def __str__(self):
         return 'DotPlot object with data point in shape %s' % str(self.size_data.shape)

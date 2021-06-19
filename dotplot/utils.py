@@ -26,3 +26,4 @@ def merge_clusterprofile_results(dataframes, groups, group_key='group', term_lis
     merged_df['pvalue'] = merged_df['pvalue'].map(lambda x: -np.log10(x))
     merged_df['p.adjust'] = merged_df['p.adjust'].map(lambda x: -np.log10(x))
     return merged_df
+
