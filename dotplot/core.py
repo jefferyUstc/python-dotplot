@@ -18,8 +18,8 @@ COLORS_PRESET = ('r', 'b', '#BA55D3', '#FFA500', 'g', '#C0C0C0')
 class DotPlot(object):
     DEFAULT_ITEM_HEIGHT = 0.3
     DEFAULT_ITEM_WIDTH = 0.3
-    DEFAULT_LEGENDS_WIDTH = .45
-    MIN_FIGURE_HEIGHT = 3
+    DEFAULT_LEGENDS_WIDTH = .6
+    MIN_FIGURE_HEIGHT = 3.5
     DEFAULT_BAND_ITEM_LENGTH = .2
 
     def __init__(self, df_size: pd.DataFrame,
@@ -35,9 +35,9 @@ class DotPlot(object):
         :param df_size: the DataFrame object represents the scatter size in dotplot
         :param df_color: the DataFrame object represents the color in dotplot
         """
-        __slots__ = ['size_data', 'resized_size_data',
-                     'color_data', 'height_item', 'width_item',
-                     'circle_data', 'resized_circle_data', 'row_colors', 'col_colors', 'mask_frames'
+        __slots__ = ['size_data', 'resized_size_data', 'color_data', 'height_item', 'width_item',
+                     'circle_data', 'resized_circle_data', 'row_colors', 'col_colors', 'mask_frames',
+                     'figure'
                      ]
         if df_color is not None and df_size.shape != df_color.shape:
             raise ValueError('df_size and df_color should have the same dimension')
@@ -59,6 +59,7 @@ class DotPlot(object):
         self.resized_size_data: Union[pd.DataFrame, None] = None
         self.resized_circle_data: Union[pd.DataFrame, None] = None
         self.mask_frames = mask_frames
+        self.figure = None
         if (self.row_colors is None) and (self.col_colors is None):
             self.col_colors = pd.DataFrame({'': ['#FFFFFF'] * df_size.shape[1]},
                                            index=df_size.columns.tolist())
@@ -74,7 +75,8 @@ class DotPlot(object):
                 (_text_max + self.width_item) * self.DEFAULT_ITEM_WIDTH
         )
         figure_height = max([self.MIN_FIGURE_HEIGHT, mainplot_height])
-        figure_width = mainplot_width + self.DEFAULT_LEGENDS_WIDTH
+        n_group = len(np.unique(self.mask_frames.to_numpy())) if self.mask_frames is not None else 1
+        figure_width = mainplot_width + self.DEFAULT_LEGENDS_WIDTH * n_group
         band_width, band_height = 0., 0.
         if self.row_colors is not None:
             band_width = self.DEFAULT_BAND_ITEM_LENGTH * self.row_colors.shape[1]
@@ -85,8 +87,9 @@ class DotPlot(object):
 
         plt.style.use('seaborn-white')
         fig = plt.figure(figsize=(figure_width, figure_height))
+        self.figure = fig
         gs = gridspec.GridSpec(nrows=2, ncols=3, wspace=0.05, hspace=0.02,
-                               width_ratios=[mainplot_width, band_width, self.DEFAULT_LEGENDS_WIDTH],
+                               width_ratios=[mainplot_width, band_width, self.DEFAULT_LEGENDS_WIDTH * n_group],
                                height_ratios=[band_height, mainplot_height]
                                )
         ax = fig.add_subplot(gs[1, 0])
@@ -94,19 +97,16 @@ class DotPlot(object):
         ax_col_bands = fig.add_subplot(gs[0, 0])
         ax_abandon = fig.add_subplot(gs[0, 1])
         legend_gs = gridspec.GridSpecFromSubplotSpec(3, 1, hspace=.1, subplot_spec=gs[1, 2])
-        ax_sizes = fig.add_subplot(legend_gs[0, 0])
-        ax_circles = fig.add_subplot(legend_gs[1, 0])
-        ax_cbar = fig.add_subplot(legend_gs[2, 0])
+        gs_sizes_legend = legend_gs[0, 0]
+        gs_cbar_legend = legend_gs[2, 0]
+        gs_circles_legend = legend_gs[1, 0]
 
-        _, _ = ax_sizes.axis('off'), ax_circles.axis('off')
         if self.col_colors is None:
             ax_col_bands.axis('off')
         if self.row_colors is None:
             ax_row_bands.axis('off')
-        if self.color_data is None:
-            ax_cbar.axis('off')
         ax_abandon.axis('off')
-        return ax, ax_cbar, ax_sizes, ax_circles, ax_row_bands, ax_col_bands, fig
+        return ax, gs_cbar_legend, gs_sizes_legend, gs_circles_legend, ax_row_bands, ax_col_bands, fig
 
     # TODO update with the newest version of __init__
     @classmethod
@@ -166,19 +166,23 @@ class DotPlot(object):
         Y = sorted(list(range(1, self.height_item + 1)) * self.width_item)
         return X, Y
 
-    def __draw_dotplot(self, ax, cmap, vmin, vmax, **kws):
-        dot_color = kws.get('dot_color', '#58000C')
-        circle_color = kws.get('circle_color', '#000000')
-        kws = kws.copy()
-        for _value in ['dot_title', 'circle_title', 'colorbar_title', 'dot_color', 'circle_color']:
-            _ = kws.pop(_value, None)
+    def __draw_dotplot(self, ax, cmap, vmin, vmax, size_factor, *, gs_cbar: mpl.gridspec.GridSpec,
+                       gs_sizes: mpl.gridspec.GridSpec, gs_circles: mpl.gridspec.GridSpec, **kws):
         X, Y = self.__get_coordinates()
+        kws = kws.copy()
+        dot_color = kws.pop('dot_color', '#58000C')
+        dot_title = kws.pop('dot_title', 'Sizes')
+        circle_color = kws.pop('circle_color', '#000000')
+        circle_title = kws.pop('circle_title', 'Circles')
+        colorbar_title = kws.pop('colorbar_title', '-log10(Pvalue)')
+
         resized_size_data_array = self.resized_size_data.values.flatten()
         color_data_array_or_str = dot_color if self.color_data is None else self.color_data.values.flatten()
         sct: Union[List[mpl.collections.PathCollection], mpl.collections.PathCollection] = []
         if self.mask_frames is not None:
-            masks, n_masks = self.resolve_mask(self.mask_frames)
+            masks, n_masks, mask_groups = self.resolve_mask(self.mask_frames)
             if isinstance(color_data_array_or_str, np.ndarray):
+                vmax = np.max(self.color_data.values.flatten()) if vmax is None else vmax
                 if isinstance(cmap, (str, mpl.colors.Colormap)):
                     cmap = CMAPS_PRESET
                 if len(cmap) < n_masks:
@@ -188,6 +192,8 @@ class DotPlot(object):
                     _sct = ax.scatter(X, Y, c=color_data_array_or_str, s=masked_resized_size_data_array,
                                       edgecolors='none', linewidths=0, vmin=vmin, vmax=vmax, cmap=_cmap, **kws)
                     sct.append(_sct)
+                self.__draw_color_bar(gs_cbar, sct, cmap, vmin, vmax, ylabel=colorbar_title)
+                self.__draw_legend(gs_sizes, sct[0], size_factor, color=dot_color, title=dot_title)
             else:
                 if isinstance(dot_color, str):
                     dot_color = COLORS_PRESET
@@ -198,14 +204,19 @@ class DotPlot(object):
                     _sct = ax.scatter(X, Y, c=_dot_color, s=masked_resized_size_data_array,
                                       edgecolors='none', linewidths=0, vmin=vmin, vmax=vmax, **kws)
                     sct.append(_sct)
-
+                self.__draw_legend(gs_sizes, sct, size_factor, color=dot_color, title=mask_groups)
         else:
+            vmax = np.max(self.color_data.values.flatten()) if vmax is None else vmax
             sct = ax.scatter(X, Y, c=color_data_array_or_str, s=resized_size_data_array,
                              edgecolors='none', linewidths=0, vmin=vmin, vmax=vmax, cmap=cmap, **kws)
-        sct_circle = None
+            if self.color_data is not None:
+                self.__draw_color_bar(gs_cbar, sct, cmap, vmin, vmax, ylabel=colorbar_title)
+            self.__draw_legend(gs_sizes, sct, size_factor, color=dot_color, title=dot_title)
         if self.circle_data is not None:
             sct_circle = ax.scatter(X, Y, c='none', s=self.resized_circle_data.values.flatten(),
                                     edgecolors=circle_color, marker='o', vmin=vmin, vmax=vmax, linestyle='--')
+            self.__draw_legend(gs_circles, sct_circle, size_factor, color=circle_color, title=circle_title,
+                               circle=True)
         width, height = self.width_item, self.height_item
         ax.set_xlim([0.5, width + 0.5])
         ax.set_ylim([0.6, height + 0.6])
@@ -215,49 +226,76 @@ class DotPlot(object):
         ax.set_yticklabels(self.size_data.index.tolist())
         ax.tick_params(axis='y', length=5, labelsize=15, direction='out')
         ax.tick_params(axis='x', length=5, labelsize=15, direction='out')
-        return sct, sct_circle
 
-    @staticmethod
-    def __draw_color_bar(ax, sct: mpl.collections.PathCollection, cmap, vmin, vmax, ylabel):
-        gradient = np.linspace(1, 0, 500)
-        gradient = gradient[:, np.newaxis]
-        _ = ax.imshow(gradient, aspect='auto', cmap=cmap, origin='upper', extent=[.2, 0.3, 0.5, -0.5])
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax_cbar2 = ax.twinx()
-        _ = ax_cbar2.set_yticks([0, 1000])
-        if vmax is None:
-            vmax = math.ceil(sct.get_array().max())
-        if vmin is None:
-            vmin = math.floor(sct.get_array().min())
-        _ = ax_cbar2.set_yticklabels([vmin, vmax])
-        _ = ax_cbar2.set_ylabel(ylabel)
+    def __draw_color_bar(self, gs: mpl.gridspec.GridSpec,
+                         sct: Union[mpl.collections.PathCollection, Sequence[mpl.collections.PathCollection]],
+                         cmap, vmin, vmax, ylabel):
+        def _draw_color_bars_core(axes, path_collection: mpl.collections.PathCollection, _cmap, _vmin, _vmax, _ylabel):
+            gradient = np.linspace(1, 0, 500)
+            gradient = gradient[:, np.newaxis]
+            _ = axes.imshow(gradient, aspect='auto', cmap=_cmap, origin='upper')
+            axes.set_xticks([])
+            axes.set_yticks([])
+            ax_cbar2 = axes.twinx()
+            if _vmax is None:
+                _vmax = math.ceil(path_collection.get_array().max())
+            if _vmin is None:
+                _vmin = math.floor(path_collection.get_array().min())
+            if _ylabel:
+                _ = ax_cbar2.set_yticks([0, 1000])
+                _ = ax_cbar2.set_yticklabels([_vmin, _vmax])
+            else:
+                _ = ax_cbar2.set_yticks([])
+            _ = ax_cbar2.set_ylabel(_ylabel)
 
-    @staticmethod
-    def __draw_legend(ax, sct: mpl.collections.PathCollection, size_factor, title, circle=False, color=None):
-        handles, labels = sct.legend_elements(prop="sizes", alpha=1,
-                                              func=lambda x: x / size_factor,
-                                              color=color
-                                              )
-        if len(handles) > 3:
-            handles = np.asarray(handles)
-            labels = np.asarray(labels)
-            handles = handles[[0, math.ceil(len(handles) / 2), -1]]
-            labels = labels[[0, math.ceil(len(labels) / 2), -1]]
-        if circle:
-            from matplotlib.lines import Line2D
-            for i, _item in enumerate(handles):
-                xdata, ydata = _item.get_data()
-                marker_size = _item.get_markersize()
-                handles[i] = Line2D(xdata, ydata, color='white', marker='$\u25CC$',
-                                    markeredgecolor=color, markersize=marker_size)
-        _ = ax.legend(handles, labels, title=title, loc='center left')  # bbox_to_anchor=(0.9, 0., 0.4, 0.4)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.spines['top'].set_visible(False)
-        ax.spines['bottom'].set_visible(False)
-        ax.spines['left'].set_visible(False)
-        ax.spines['right'].set_visible(False)
+        fig = self.figure
+        if isinstance(sct, mpl.collections.PathCollection):
+            ax = fig.add_subplot(gs)
+            _draw_color_bars_core(ax, sct, cmap, vmin, vmax, ylabel)
+        else:
+            new_gs = gridspec.GridSpecFromSubplotSpec(1, len(sct), wspace=.2, subplot_spec=gs)
+            n_sct = len(sct) - 1
+            for i, (_sct, _cmap) in enumerate(zip(sct, cmap)):
+                ax = fig.add_subplot(new_gs[0, i])
+                _ylabel = ylabel if n_sct == i else ''
+                _draw_color_bars_core(ax, _sct, _cmap, vmin, vmax, _ylabel=_ylabel)
+
+    def __draw_legend(self, gs: mpl.gridspec.GridSpec,
+                      sct: mpl.collections.PathCollection,
+                      size_factor, title, circle=False, color=None):
+        def __draw_legend_core(_ax, _sct, _size_factor, _title, _circle=False, _color=None):
+            handles, labels = _sct.legend_elements(prop="sizes", alpha=1,
+                                                   func=lambda x: x / _size_factor,
+                                                   color=_color
+                                                   )
+            if len(handles) > 3:
+                handles = np.asarray(handles)
+                labels = np.asarray(labels)
+                handles = handles[[0, math.ceil(len(handles) / 2), -1]]
+                labels = labels[[0, math.ceil(len(labels) / 2), -1]]
+            if _circle:
+                from matplotlib.lines import Line2D
+                for j, _item in enumerate(handles):
+                    xdata, ydata = _item.get_data()
+                    marker_size = _item.get_markersize()
+                    handles[j] = Line2D(xdata, ydata, color='white', marker='$\u25CC$',
+                                        markeredgecolor=_color, markersize=marker_size)
+            _ = _ax.legend(handles, labels, title=_title, loc='center left', frameon=False)
+            _ax.set_xticks([])
+            _ax.set_yticks([])
+            for item in ['top', 'bottom', 'left', 'right']:
+                _ax.spines[item].set_visible(False)
+
+        fig = self.figure
+        if isinstance(sct, mpl.collections.PathCollection):
+            ax = fig.add_subplot(gs)
+            __draw_legend_core(ax, sct, size_factor, title, circle, color)
+        else:
+            new_gs = gridspec.GridSpecFromSubplotSpec(1, len(sct), wspace=.5, subplot_spec=gs)
+            for i, (_sct, _color, _title) in enumerate(zip(sct, color, title)):
+                ax = fig.add_subplot(new_gs[0, i])
+                ax.set_facecolor((0, 0, 0, 0))
+                __draw_legend_core(ax, _sct, size_factor, _title, circle, _color)
 
     def __cluster_matrix(self, axis=0, **kwargs):
         from .hierarchical import cluster_hierarchy
@@ -318,25 +356,9 @@ class DotPlot(object):
         self.__preprocess_data(size_factor, cluster_row=cluster_row, cluster_col=cluster_col,
                                **cluster_kws if cluster_kws is not None else {}
                                )
-        ax, ax_cbar, ax_sizes, ax_circles, ax_row_bands, ax_col_bands, fig = self.__get_figure()
-        scatter, sct_circle = self.__draw_dotplot(ax, cmap, vmin, vmax, **kwargs)
-        # todo
-        if isinstance(scatter, Sequence):
-            pass
-        else:
-            self.__draw_legend(ax_sizes, scatter, size_factor,
-                               color=kwargs.get('dot_color', '#58000C'),  # dot legend color
-                               title=kwargs.get('dot_title', 'Sizes'))
-        # todo
-        if self.color_data is not None:
-            self.__draw_color_bar(ax_cbar, scatter, cmap, vmin, vmax,
-                                  ylabel=kwargs.get('colorbar_title', '-log10(pvalue)'))
-        if sct_circle is not None:
-            self.__draw_legend(ax_circles, sct_circle, size_factor,
-                               color=kwargs.get('circle_color', '#000000'),
-                               title=kwargs.get('circle_title', 'Circles'),
-                               circle=True)
-
+        ax, gs_cbar_legend, gs_sizes_legend, gs_circles_legend, ax_row_bands, ax_col_bands, fig = self.__get_figure()
+        self.__draw_dotplot(ax, cmap, vmin, vmax, size_factor, gs_cbar=gs_cbar_legend, gs_sizes=gs_sizes_legend,
+                            gs_circles=gs_circles_legend, **kwargs)
         if self.col_colors is not None:
             from .annotation_bands import draw_heatmap
             color_band_kws = {} if color_band_kws is None else color_band_kws
@@ -368,7 +390,7 @@ class DotPlot(object):
             group_masks.append(group_mask)
         if n_group < 2:
             raise ValueError('group number<2')
-        return group_masks, n_group
+        return group_masks, n_group, groups
 
     def __str__(self):
         return 'DotPlot object with data point in shape %s' % str(self.size_data.shape)
