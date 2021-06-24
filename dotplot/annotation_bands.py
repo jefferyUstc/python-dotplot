@@ -88,8 +88,8 @@ def draw_heatmap(colors: Union[pd.DataFrame, pd.Series],
     :return:
     """
     colors = colors.copy()
-    if index_order is not None:
-        index_order = list(index_order)[::-1]
+    # if index_order is not None:
+    #     index_order = list(index_order)[::-1]
     colors, labels = _process_colors(colors, index_order)
     matrix, cmap = _color_list_to_matrix_and_cmap(colors, axis=axis)
     axes.pcolormesh(matrix, cmap=cmap, **kwargs)
