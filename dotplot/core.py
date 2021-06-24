@@ -206,7 +206,8 @@ class DotPlot(object):
                     sct.append(_sct)
                 self.__draw_legend(gs_sizes, sct, size_factor, color=dot_color, title=mask_groups)
         else:
-            vmax = np.max(self.color_data.values.flatten()) if vmax is None else vmax
+            if self.color_data is not None:
+                vmax = np.max(self.color_data.values.flatten()) if vmax is None else vmax
             sct = ax.scatter(X, Y, c=color_data_array_or_str, s=resized_size_data_array,
                              edgecolors='none', linewidths=0, vmin=vmin, vmax=vmax, cmap=cmap, **kws)
             if self.color_data is not None:
