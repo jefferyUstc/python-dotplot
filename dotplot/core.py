@@ -8,6 +8,8 @@ import pandas as pd
 from matplotlib import gridspec
 from matplotlib import pyplot as plt
 
+from .exceptions import ShapeInconsistencyError
+
 mpl.rcParams['pdf.fonttype'] = 42
 mpl.rcParams["font.sans-serif"] = "Arial"
 
@@ -40,15 +42,15 @@ class DotPlot(object):
                      'figure'
                      ]
         if df_color is not None and df_size.shape != df_color.shape:
-            raise ValueError('df_size and df_color should have the same dimension')
+            raise ShapeInconsistencyError('df_size and df_color should have the same dimension')
         if df_circle is not None and df_size.shape != df_circle.shape:
-            raise ValueError('df_size and df_circle should have the same dimension')
+            raise ShapeInconsistencyError('df_size and df_circle should have the same dimension')
         if row_colors is not None and df_size.shape[0] != len(row_colors):
-            raise ValueError('row_colors has the wrong shape')
+            raise ShapeInconsistencyError('row_colors has the wrong shape')
         if col_colors is not None and df_size.shape[1] != len(col_colors):
-            raise ValueError('col_colors has the wrong shape')
+            raise ShapeInconsistencyError('col_colors has the wrong shape')
         if mask_frames is not None and df_size.shape != mask_frames.shape:
-            raise ValueError('df_size and mask_frames should have the same dimension')
+            raise ShapeInconsistencyError('df_size and mask_frames should have the same dimension')
 
         self.size_data = df_size
         self.color_data = df_color
@@ -108,13 +110,15 @@ class DotPlot(object):
         ax_abandon.axis('off')
         return ax, gs_cbar_legend, gs_sizes_legend, gs_circles_legend, ax_row_bands, ax_col_bands, fig
 
-    # TODO update with the newest version of __init__
     @classmethod
     def parse_from_tidy_data(cls, data_frame: pd.DataFrame, item_key: str, group_key: str, sizes_key: str,
                              color_key: Union[None, str] = None, circle_key: Union[None, str] = None,
                              selected_item: Union[None, Sequence] = None,
-                             selected_group: Union[None, Sequence] = None, *,
-                             sizes_func: Union[None, Callable] = None, color_func: Union[None, Callable] = None
+                             selected_group: Union[None, Sequence] = None,
+                             row_colors: Union[None, pd.Series, pd.DataFrame] = None,
+                             col_colors: Union[None, pd.Series, pd.DataFrame] = None,
+                             mask_frames: Union[None, pd.DataFrame, Sequence[Union[str, int]]] = None,
+                             *, sizes_func: Union[None, Callable] = None, color_func: Union[None, Callable] = None
                              ):
         """
 
@@ -125,12 +129,15 @@ class DotPlot(object):
         :param group_key:
         :param sizes_key:
         :param color_key:
+        :param circle_key:
         :param selected_item: default None, if specified, this should be subsets of `item_key` in `data_frame`
                               alternatively, this param can be used as self-defined item order definition.
         :param selected_group: Same as `selected_item`, for group order and subset groups
-        :param sizes_func:
-        :param color_func:
-        :param circle_key:
+        :param col_colors:
+        :param row_colors:
+        :param mask_frames:
+        :param sizes_func: Callable
+        :param color_func: Callable
         :return:
         """
         keys = [v for v in [item_key, group_key, sizes_key, color_key, circle_key] if v is not None]
@@ -159,7 +166,20 @@ class DotPlot(object):
             color_df = data_frame.loc[:, data_frame.columns.str.startswith(color_key)]
         if circle_key is not None:
             circle_df = data_frame.loc[:, data_frame.columns.str.startswith(circle_key)]
-        return cls(sizes_df, color_df, circle_df)
+        if (mask_frames is not None) and isinstance(mask_frames, Sequence):
+            mask_frames = mask_frames if isinstance(mask_frames, List) else list(mask_frames)
+            n_row, n_col = sizes_df.shape
+            if len(mask_frames) == n_row:
+                mask_frames = pd.DataFrame([[item] * n_col for item in mask_frames],
+                                           index=sizes_df.index.values, columns=sizes_df.columns.values)
+            elif len(mask_frames) == n_col:
+                mask_frames = pd.DataFrame([[item] * n_row for item in mask_frames],
+                                           index=sizes_df.columns.values, columns=sizes_df.index.values)
+                mask_frames = mask_frames.T
+            else:
+                raise ShapeInconsistencyError('mask frame shape Error.')
+        return cls(sizes_df, color_df, circle_df, row_colors=row_colors,
+                   col_colors=col_colors, mask_frames=mask_frames)
 
     def __get_coordinates(self):
         X = list(range(1, self.width_item + 1)) * self.height_item
