@@ -5,7 +5,7 @@ Light Weighted dotplot drawer
 
 # Tutorial
 
-Examples of dotplot can be found [tutorial](https://nbviewer.jupyter.org/github/jefferyUstc/python-dotplot/blob/main/tutorial/tutorials.ipynb?flush_cache=True)
+Examples of dotplot can be found [scenario 1](https://nbviewer.jupyter.org/github/jefferyUstc/python-dotplot/blob/main/tutorial/tutorials.ipynb) or [scenario 2](https://nbviewer.jupyter.org/github/jefferyUstc/python-dotplot/blob/main/tutorial/tutorials.2.ipynb)
 
 # Installation
 ```shell script
