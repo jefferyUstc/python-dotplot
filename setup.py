@@ -7,7 +7,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="python_dotplot",
-    version="0.0.1b2",
+    version="0.0.1",
     author='jefferyUstc',
     author_email="jeffery_cpu@163.com",
     description="light weighted dotplot drawer",
